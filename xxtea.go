@@ -14,7 +14,7 @@ const BlockSize = 8
 
 // An xxteaCipher is an instance of an XXTEA cipher using a particular key.
 type xxteaCipher struct {
-	k [4]uint32
+	k [4]int32
 }
 
 // KeySizeError may be returned by NewCipher.
@@ -35,7 +35,7 @@ func NewCipher(key []byte) (cipher.Block, error) {
 	case 16:
 		break
 	}
-	u := bytesToUint32(key)
+	u := bytesToInt32(key)
 	c := new(xxteaCipher)
 	copy(c.k[:], u)
 	return c, nil
@@ -44,63 +44,86 @@ func NewCipher(key []byte) (cipher.Block, error) {
 func (c *xxteaCipher) BlockSize() int { return BlockSize }
 
 func (c *xxteaCipher) Encrypt(dst, src []byte) {
-	v := bytesToUint32(src)
+	v := bytesToInt32(src)
 	c.blockEncrypt(v)
-	copy(dst, uint32ToBytes(v))
+	copy(dst, int32ToBytes(v))
 }
 
 func (c *xxteaCipher) Decrypt(dst, src []byte) {
-	v := bytesToUint32(src)
+	v := bytesToInt32(src)
 	c.blockDecrypt(v)
-	copy(dst, uint32ToBytes(v))
+	copy(dst, int32ToBytes(v))
 }
 
-const delta = 0x9e3779b9
+const delta = -1640531527
 
 // blockEncrypt encrypts the []uint32 represtentation of a block,
 // in-place.
-func (c *xxteaCipher) blockEncrypt(v []uint32) {
+func (c *xxteaCipher) blockEncrypt(v []int32) {
 	n := len(v)
 	y := v[0]
 	z := v[n-1]
-	q := 6 + 52/n
+	rounds := 6 + 52/n
 
-	var sum uint32
-	for q > 0 {
-		q--
+	var sum int32
+	for rounds > 0 {
+		rounds--
 		sum += delta
 		e := (sum >> 2) & 3
 		var p int
 		for p = 0; p < n-1; p++ {
 			y = v[p+1]
-			v[p] += ((z>>5 ^ y<<2) + (y>>3 ^ z<<4)) ^ ((sum ^ y) + (c.k[uint32(p)&3^e] ^ z))
+
+			t_a := int32(uint32(z) >> 5) ^ int32(uint32(y) << 2)
+			t_b := int32(uint32(y) >> 3) ^ int32(uint32(z) << 4)
+			t_c := int32(sum ^ y)
+			t_d := (c.k[int32(p & 3) ^ e]) ^ int32(z)
+
+			v[p] += (t_a + t_b) ^ (t_c + t_d)
 			z = v[p]
 		}
 		y = v[0]
-		v[n-1] += ((z>>5 ^ y<<2) + (y>>3 ^ z<<4)) ^ ((sum ^ y) + (c.k[uint32(p)&3^e] ^ z))
+
+		t_a := int32(uint32(z) >> 5) ^ int32(uint32(y) << 2)
+		t_b := int32(uint32(y) >> 3) ^ int32(uint32(z) << 4)
+		t_c := int32(sum ^ y)
+		t_d := (c.k[int32(p & 3) ^ e]) ^ int32(z)
+
+		v[n-1] += (t_a + t_b) ^ (t_c + t_d)
 		z = v[n-1]
 	}
 }
 
-// blockDecrypt decrypts the []uint32 represtentation of a block,
+// blockDecrypt decrypts the []int32 represtentation of a block,
 // in-place.
-func (c *xxteaCipher) blockDecrypt(v []uint32) {
+func (c *xxteaCipher) blockDecrypt(v []int32) {
 	n := len(v)
 	y := v[0]
 	z := v[n-1]
 	q := 6 + 52/n
 
-	sum := uint32(q * delta)
+	sum := int32(q * delta)
 	for sum != 0 {
 		e := (sum >> 2) & 3
 		var p int
 		for p = n - 1; p > 0; p-- {
 			z = v[p-1]
-			v[p] -= ((z>>5 ^ y<<2) + (y>>3 ^ z<<4)) ^ ((sum ^ y) + (c.k[uint32(p)&3^e] ^ z))
+
+			t_a := int32(uint32(z) >> 5) ^ int32(uint32(y) << 2)
+			t_b := int32(uint32(y) >> 3) ^ int32(uint32(z) << 4)
+			t_c := int32(sum ^ y)
+			t_d := (c.k[int32(p & 3) ^ e]) ^ int32(z)
+
+			v[p] -= (t_a + t_b) ^ (t_c + t_d)
 			y = v[p]
 		}
 		z = v[n-1]
-		v[0] -= ((z>>5 ^ y<<2) + (y>>3 ^ z<<4)) ^ ((sum ^ y) + (c.k[uint32(p)&3^e] ^ z))
+
+		t_a := int32(uint32(z) >> 5) ^ int32(uint32(y) << 2)
+		t_b := int32(uint32(y) >> 3) ^ int32(uint32(z) << 4)
+		t_c := int32(sum ^ y)
+		t_d := (c.k[int32(p & 3) ^ e]) ^ int32(z)
+		v[0] -= (t_a + t_b) ^ (t_c + t_d)
 		y = v[0]
 		sum -= delta
 	}
